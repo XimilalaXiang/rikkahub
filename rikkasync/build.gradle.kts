@@ -22,7 +22,10 @@ dependencies {
     api(libs.okhttp)
     api(libs.kotlinx.serialization.json)
     api(libs.kotlinx.coroutines.core)
+    // SQLite 驱动抽象(Room 本来就依赖它):状态库只面向 SQLiteDriver 写,Android 用框架驱动,JVM 测试用 Bundled 驱动。
+    api(libs.androidx.sqlite)
 
+    testImplementation(libs.androidx.sqlite.bundled) // 仅测试:让状态库与触发器的 SQL 能在纯 JVM 上跑
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
 }
