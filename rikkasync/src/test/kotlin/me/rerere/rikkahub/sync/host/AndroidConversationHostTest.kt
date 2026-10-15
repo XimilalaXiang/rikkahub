@@ -31,38 +31,7 @@ class AndroidConversationHostTest {
     private val keys = Crypto.deriveKeys(Crypto.generateMasterKey())
     private val closers = ArrayList<AutoCloseable>()
 
-    inner class Phone(name: String) {
-        val db: SqlDb
-        val syncDb: SyncStateDb = SyncStateDb.openOrRecover(BundledSQLiteDriver(), ":memory:")
-        val sink: RawRowSink
-        val busy = HashSet<String>()
-        val host: AndroidConversationHost
-        val engine: SyncEngine
-        var clock = 10_000L
-        private var ids = 0
-
-        init {
-            val (d, close) = TestAndroidDb.open()
-            db = d
-            closers.add(close)
-            closers.add(syncDb)
-            sink = RawRowSink(db)
-            host = AndroidConversationHost(db, syncDb, sink, isBusy = { it in busy }, appVersion = "test", now = { clock }, newId = { "$name-id-${++ids}" })
-            val (token, id) = server.createDevice(name)
-            engine = SyncEngine(SyncClient(server.url, token), keys, host, syncDb, id)
-        }
-
-        fun conv(id: String, vararg texts: String, title: String = "title-$id", updateAt: Long = 1000) {
-            TestAndroidDb.insertConversation(db, id, title = title, updateAt = updateAt)
-            texts.forEachIndexed { i, t -> TestAndroidDb.insertNode(db, "$id-n$i", id, i, msg("$id-m$i", t)) }
-        }
-
-        fun titles(): Map<String, String> = db.query("SELECT id, title FROM ConversationEntity ORDER BY id") { it.text(0) to it.text(1) }.toMap()
-        fun ids() = titles().keys
-        fun row(id: String) = ConversationRows.readConversation(db, id)!!
-        fun nodes(id: String) = ConversationRows.readNodes(db, id)
-        fun nodeCount() = db.query("SELECT COUNT(*) FROM message_node") { it.long(0).toInt() }.single()
-    }
+    private fun Phone(name: String) = TestPhone(server, keys, name).also { closers.add(it) }
 
     private fun msg(id: String, text: String) = """[{"id":"$id","role":"user","parts":[{"type":"text","text":"$text"}],"createdAt":"2026-01-01T00:00:00"}]"""
 
@@ -79,7 +48,7 @@ class AndroidConversationHostTest {
 
     private fun run(block: suspend () -> Unit) = runBlocking { block() }
 
-    private suspend fun settle(vararg phones: Phone) {
+    private suspend fun settle(vararg phones: TestPhone) {
         repeat(4) { for (p in phones) p.engine.syncOnce() }
     }
 
