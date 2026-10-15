@@ -1,0 +1,44 @@
+{
+  "protocol": 0,
+  "note": "Deterministic vectors. master key bytes are 0x01..0x20. Nonces are 12 bytes filled with the given byte.",
+  "master_key_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+  "recovery_key": "rks1-AEBAG-BAFAY-DQQCI-KBMGA-2DQPC-AIREE-YUCUL-BOGAZ-DINRY-HI6D4-QK4IL-MFY",
+  "derived": {
+    "enc_key_hex": "ddfd34baeba2cf2764e6002967a8b622445d0f803208bfccb59552f56a9be65c",
+    "blob_key_hex": "b1ff333df7fda074d69650dabb472d9e21dd349eef61479dae751cba7c039577"
+  },
+  "records": [
+    {
+      "name": "small-uncompressed",
+      "type": "conversation",
+      "id": "c1",
+      "version": 1,
+      "aad_utf8": "rikkasync/v0|rec|conversation|c1|1",
+      "nonce_hex": "a1a1a1a1a1a1a1a1a1a1a1a1",
+      "plaintext_utf8": "{\"v\":0,\"type\":\"conversation\",\"id\":\"c1\",\"fmt\":\"android-room-30\",\"blobs\":[],\"data\":{\"title\":\"你好\"}}",
+      "sealed_hex": "a1a1a1a1a1a1a1a1a1a1a1a158ee55250b3b365cdb09c8c4eab2526f80701417e88870e184261cd3cda0f0460d631b51bb7253d6892ef0622be1e23f0ff49ed34874c4fb31815bdf92cfa2988113c47d59f7b1e600b65012e7ae49751fa5463b9b0781057216c24f277f801ba9e640e05f50ce81e3fea91cb854d7b9a6ae4fb98a",
+      "flag": "raw"
+    },
+    {
+      "name": "large-gzip",
+      "type": "conversation",
+      "id": "c/2",
+      "version": 7,
+      "aad_utf8": "rikkasync/v0|rec|conversation|c/2|7",
+      "nonce_hex": "b2b2b2b2b2b2b2b2b2b2b2b2",
+      "plaintext_utf8": "{\"v\":0,\"text\":\"hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world \"}",
+      "sealed_hex": "b2b2b2b2b2b2b2b2b2b2b2b2ecbd71cfcf771ee49176751a530632b4fed01527ed8f3b46a97fa3a97c53b48a3db3bb34903fa7e5b4713c323a8a203bf867f3b04cafc8f7299b638e2c45789ccdd22157a5fb99e42ce8a3b7c705a3a7",
+      "flag": "gzip"
+    }
+  ],
+  "blobs": [
+    {
+      "name": "png-header",
+      "plaintext_hex": "89504e470d0a1a0a01020304",
+      "blob_id": "f39e0062f10c5963189eca4f309049abd8000cc3843b95319a0b09dd8f203048",
+      "aad_utf8": "rikkasync/v0|blob|f39e0062f10c5963189eca4f309049abd8000cc3843b95319a0b09dd8f203048",
+      "nonce_hex": "c3c3c3c3c3c3c3c3c3c3c3c3",
+      "sealed_hex": "c3c3c3c3c3c3c3c3c3c3c3c365975d7aaacecb1afc21134cf496c1ef53611024d5da41e0b824d2c2"
+    }
+  ]
+}
