@@ -55,7 +55,7 @@ class SyncRoomCompatTest {
             )
             convDao.insert(entity)
             assertEquals(listOf(id), tracker.claim())
-            convDao.insert(entity) // 标记已被领取后再次写入
+            // 上游 ConversationDAO.insert 是 @Insert(默认 ABORT),不会重复 insert;真实写路径是 @Update 与 message_node 的 REPLACE。
             convDao.update(entity.copy(title = "updated")) // @Update(UPDATE OR ABORT)
             val node = me.rerere.rikkahub.data.db.entity.MessageNodeEntity("n1", id, 0, "[]", 0)
             nodeDao.insertAll(listOf(node))
@@ -70,38 +70,28 @@ class SyncRoomCompatTest {
         }
     }
 
-    /** V14:迁移链上(含 AutoMigration 与手写 Migration)已装触发器与 sync_dirty 的库,迁移不报错,且重新安装能恢复触发器。 */
+    /** V14:29→30 自动迁移后 sync_dirty 仍在;启动时 DirtyTracker 能恢复 6 个触发器(Room 导出的 schema 不含 sync_dirty,故不用 runMigrationsAndValidate)。 */
     @Test
     fun migrationsSurviveSyncObjectsAndInstallRestoresTriggers() {
-        val from = 29
-        helper.createDatabase("migration-test", from).apply {
-            // 手工装触发器:模拟"用户已启用同步后升级应用"
+        val migrationName = "migration-test-${System.nanoTime()}"
+        helper.createDatabase(migrationName, 29).apply {
             execSQL("CREATE TABLE IF NOT EXISTS sync_dirty (entity_id TEXT PRIMARY KEY NOT NULL, kind TEXT NOT NULL, ts INTEGER NOT NULL)")
             execSQL("CREATE TRIGGER IF NOT EXISTS sync_v2_conv_ins AFTER INSERT ON ConversationEntity BEGIN DELETE FROM sync_dirty WHERE entity_id = NEW.id; INSERT INTO sync_dirty VALUES (NEW.id,'conversation',strftime('%s','now')); END")
             close()
         }
-        // AutoMigration 29→30 由 Room 生成;runMigrationsAndValidate 要传入手写迁移,29→30 没有手写迁移
-        val migrated = helper.runMigrationsAndValidate("migration-test", AndroidWireContract.SCHEMA_VERSION, true)
-        val wrapped = object : me.rerere.rikkahub.sync.host.SqlDb {
-            override fun exec(sql: String, args: List<Any?>) = if (args.isEmpty()) migrated.execSQL(sql) else migrated.execSQL(sql, args.toTypedArray())
-            override fun <T> query(sql: String, args: List<Any?>, map: (me.rerere.rikkahub.sync.host.SqlRow) -> T): List<T> {
-                val c = migrated.query(sql, args.map { it?.toString() }.toTypedArray())
-                c.use {
-                    val row = object : me.rerere.rikkahub.sync.host.SqlRow {
-                        override fun text(i: Int) = it.getString(i) ?: ""
-                        override fun long(i: Int) = it.getLong(i)
-                        override fun isNull(i: Int) = it.isNull(i)
-                    }
-                    val out = ArrayList<T>()
-                    while (it.moveToNext()) out.add(map(row))
-                    return out
-                }
+        val db = AppDatabaseFactory.create(context, migrationName)
+        try {
+            assertEquals(AndroidWireContract.SCHEMA_VERSION, db.openHelper.writableDatabase.version)
+            db.openHelper.writableDatabase.query("SELECT name FROM sqlite_master WHERE type='table' AND name='sync_dirty'").use { c ->
+                assertTrue(c.moveToFirst())
             }
-            override fun <T> transaction(block: () -> T): T = block()
+            val sql = RoomSqlDb(db)
+            DirtyTracker(sql).install()
+            val triggers = sql.query("SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'sync\\_v2\\_%' ESCAPE '\\'") { it.text(0) }
+            assertTrue(triggers.toString(), triggers.size == 6)
+        } finally {
+            db.close()
+            context.deleteDatabase(migrationName)
         }
-        DirtyTracker(wrapped).install()
-        val triggers = wrapped.query("SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'sync\\_v2\\_%' ESCAPE '\\'") { it.text(0) }
-        assertTrue(triggers.toString(), triggers.size == 6)
-        migrated.close()
     }
 }
