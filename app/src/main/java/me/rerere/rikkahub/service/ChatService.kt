@@ -202,7 +202,7 @@ class ChatService(
     // workspace 系统提示注入 (依赖 workspaceRepository, 故在类内构造)
     private val workspaceReminderTransformer = WorkspaceReminderTransformer(workspaceRepository)
 
-    private val sessionManager = ConversationSessionManager(
+    internal val sessionManager = ConversationSessionManager( // rikkasync: private→internal,云同步的忙判据与落库出口需要它
         scope = appScope,
         createInitialConversation = { id ->
             Conversation.ofId(id, assistantId = settingsStore.settingsFlow.value.getCurrentAssistant().id)

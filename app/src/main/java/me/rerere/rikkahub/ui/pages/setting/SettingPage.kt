@@ -279,6 +279,12 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         supportingContent = { Text(stringResource(R.string.setting_page_data_backup_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_data_backup)) },
                     )
+                    item( // rikkasync: 云同步入口
+                        onClick = { navController.navigate(Screen.SyncSettings) },
+                        leadingContent = { CardGroupIcon(HugeIcons.Database02, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = { Text(stringResource(R.string.sync_entry_desc)) },
+                        headlineContent = { Text(stringResource(R.string.sync_title)) },
+                    )
                     item(
                         onClick = { navController.navigate(Screen.SettingFiles) },
                         leadingContent = { CardGroupIcon(HugeIcons.ImageUpload, containerColor = containerColor, contentColor = contentColor) },

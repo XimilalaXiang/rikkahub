@@ -33,6 +33,8 @@ import me.rerere.rikkahub.di.appModule
 import me.rerere.rikkahub.di.dataSourceModule
 import me.rerere.rikkahub.di.repositoryModule
 import me.rerere.rikkahub.di.viewModelModule
+import me.rerere.rikkahub.sync.SyncRuntime // rikkasync
+import me.rerere.rikkahub.sync.syncModule // rikkasync
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.sync.BackupManager
@@ -67,6 +69,7 @@ class RikkaHubApp : Application() {
                 BackupManager.applyPendingRestore(this@RikkaHubApp, JsonInstant)
             }
             if (restored) {
+                SyncRuntime.onBackupRestored(this) // rikkasync: 恢复备份 = 整库回滚,同步状态必须重置
                 Toast.makeText(this, R.string.backup_page_restore_success, Toast.LENGTH_LONG).show()
             }
         } catch (e: RestoreFailedException) {
@@ -77,7 +80,7 @@ class RikkaHubApp : Application() {
             androidLogger()
             androidContext(this@RikkaHubApp)
             workManagerFactory()
-            modules(appModule, viewModelModule, dataSourceModule, repositoryModule)
+            modules(appModule, viewModelModule, dataSourceModule, repositoryModule, syncModule) // rikkasync: syncModule
         }
         this.createNotificationChannel()
 
@@ -114,6 +117,9 @@ class RikkaHubApp : Application() {
 
         // Increment launch count
         incrementLaunchCount()
+
+        // rikkasync: 云同步(未启用/未配置时什么都不做)
+        get<SyncRuntime>().start()
 
         // Composer.setDiagnosticStackTraceMode(ComposeStackTraceMode.Auto)
     }

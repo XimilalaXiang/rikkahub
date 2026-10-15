@@ -153,6 +153,7 @@ configurations.matching { it.name.endsWith("UnitTestRuntimeClasspath") }.configu
 }
 
 dependencies {
+    implementation(project(":rikkasync")) // rikkasync: 云同步引擎(纯 JVM 模块,见 rikkasync/README.md)
     implementation(libs.quickjs)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
