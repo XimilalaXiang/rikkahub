@@ -25,6 +25,10 @@ internal fun <T> SqlDb.queryOne(sql: String, args: List<Any?> = emptyList(), map
 
 /** [SqlDb] 在 androidx.sqlite 连接上的实现(JVM 测试与任何用驱动接口的场景)。 */
 class ConnectionSqlDb(private val conn: SQLiteConnection) : SqlDb {
+    // 单条原生连接不是线程安全的(并发使用会让 JVM 在 native 里崩溃)。Room 的 SupportSQLiteDatabase 自带串行化,
+    // 这里补上同样的保证;事务整段持锁(可重入),不会被别的线程的语句插进去。
+    private val lock = java.util.concurrent.locks.ReentrantLock()
+
     private fun bind(stmt: SQLiteStatement, args: List<Any?>) {
         args.forEachIndexed { i, a ->
             val idx = i + 1
@@ -39,7 +43,7 @@ class ConnectionSqlDb(private val conn: SQLiteConnection) : SqlDb {
         }
     }
 
-    override fun exec(sql: String, args: List<Any?>) {
+    override fun exec(sql: String, args: List<Any?>) = lock.withLockCompat {
         val stmt = conn.prepare(sql)
         try {
             bind(stmt, args)
@@ -49,7 +53,7 @@ class ConnectionSqlDb(private val conn: SQLiteConnection) : SqlDb {
         }
     }
 
-    override fun <T> query(sql: String, args: List<Any?>, map: (SqlRow) -> T): List<T> {
+    override fun <T> query(sql: String, args: List<Any?>, map: (SqlRow) -> T): List<T> = lock.withLockCompat {
         val stmt = conn.prepare(sql)
         try {
             bind(stmt, args)
@@ -60,13 +64,13 @@ class ConnectionSqlDb(private val conn: SQLiteConnection) : SqlDb {
             }
             val out = ArrayList<T>()
             while (stmt.step()) out.add(map(row))
-            return out
+            out
         } finally {
             stmt.close()
         }
     }
 
-    override fun <T> transaction(block: () -> T): T {
+    override fun <T> transaction(block: () -> T): T = lock.withLockCompat {
         conn.execSQL("BEGIN IMMEDIATE")
         val result = try {
             block()
@@ -75,6 +79,15 @@ class ConnectionSqlDb(private val conn: SQLiteConnection) : SqlDb {
             throw t
         }
         conn.execSQL("COMMIT")
-        return result
+        result
+    }
+}
+
+private inline fun <T> java.util.concurrent.locks.ReentrantLock.withLockCompat(block: () -> T): T {
+    lock()
+    try {
+        return block()
+    } finally {
+        unlock()
     }
 }

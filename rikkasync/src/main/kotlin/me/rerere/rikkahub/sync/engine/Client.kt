@@ -78,6 +78,9 @@ interface SyncApi {
     suspend fun hasBlob(id: String): Boolean
     suspend fun putBlob(id: String, sealed: ByteArray)
     suspend fun getBlob(id: String): ByteArray
+
+    /** 持续接收服务器的 head 变更通知,直到协程被取消或流结束。 */
+    suspend fun events(onHead: (Long) -> Unit)
 }
 
 class SyncClient(
@@ -182,7 +185,7 @@ class SyncClient(
      * 持续接收服务器的 head 变更通知,直到协程被取消或流结束。每个通知回调一次 onHead(headSeq)。
      * (这是读超时为 0 的长连接,所以用专门的客户端实例。)
      */
-    suspend fun events(onHead: (Long) -> Unit) {
+    override suspend fun events(onHead: (Long) -> Unit) {
         val streaming = http.newBuilder().readTimeout(0, TimeUnit.MILLISECONDS).build()
         val req = request("/v1/events").build()
         withContext(Dispatchers.IO) {

@@ -35,4 +35,6 @@ tasks.withType<Test>().configureEach {
     // 引擎测试需要一个真实的同步服务器:指向 rikkasync 仓库的检出目录(含 server/test-harness.ts),并需要 bun。
     // 未设置时这些测试会被跳过(假设不成立),密码学向量测试不受影响。
     environment("RIKKASYNC_REPO", providers.environmentVariable("RIKKASYNC_REPO").getOrElse(""))
+    // 跨平台测试(Kotlin Android 适配器 ↔ TypeScript 桌面适配器)还需要 rikkahub-desktop 仓库的检出目录;未设置则跳过。
+    environment("RIKKAHUB_DESKTOP_REPO", providers.environmentVariable("RIKKAHUB_DESKTOP_REPO").getOrElse(""))
 }
