@@ -151,6 +151,11 @@ class SyncController(
     }
 
     /** 控制器没在跑(例如后台 Worker)时执行一轮完整同步;在跑则等同 [runNow]。 */
+    /** 宿主在"没有脏标记可查"的本地数据(设置、文件夹)变化时调用:唤醒循环,防抖后跑一轮。 */
+    fun notifyLocalChange() {
+        wake.trySend(Unit)
+    }
+
     suspend fun syncOnceNow(): SyncReport {
         if (loopJob?.isActive == true) return runNow()
         refreshFlags()

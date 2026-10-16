@@ -52,6 +52,7 @@ class SyncStateDb(private val conn: SQLiteConnection) : StateStore, AutoCloseabl
         // 附件:块 id ↔ 本机文件(相对路径)。块 id 是内容的带密钥 HMAC,所以同内容同块。
         conn.execSQL("CREATE TABLE IF NOT EXISTS blob_map (blob_id TEXT PRIMARY KEY NOT NULL, local_ref TEXT NOT NULL)")
         // 本机文件 → 块 id 的缓存:块 id 要读全部字节算 HMAC,不能每次推送都重算。键里带 size 与 mtime,文件换了内容自然失效。
+        conn.execSQL("CREATE TABLE IF NOT EXISTS pending_removal (entity_id TEXT PRIMARY KEY NOT NULL)")
         conn.execSQL("CREATE TABLE IF NOT EXISTS file_blob_cache (local_ref TEXT PRIMARY KEY NOT NULL, size INTEGER NOT NULL, mtime_ms INTEGER NOT NULL, blob_id TEXT NOT NULL)")
         if (version < SCHEMA_VERSION) conn.execSQL("PRAGMA user_version = $SCHEMA_VERSION")
     }
@@ -118,7 +119,22 @@ class SyncStateDb(private val conn: SQLiteConnection) : StateStore, AutoCloseabl
             conn.execSQL("DELETE FROM fp_cache")
             conn.execSQL("DELETE FROM blob_map")
             conn.execSQL("DELETE FROM file_blob_cache")
+            conn.execSQL("DELETE FROM pending_removal")
         }
+    }
+
+    // ── 延迟删除(设置条目,如助手:远端已删,但本机还有依赖它的数据时先留着)────────────────
+
+    fun addPendingRemoval(entityId: String) = synchronized(lock) {
+        conn.run("INSERT OR IGNORE INTO pending_removal(entity_id) VALUES (?)") { it.bindText(1, entityId) }
+    }
+
+    fun clearPendingRemoval(entityId: String) = synchronized(lock) {
+        conn.run("DELETE FROM pending_removal WHERE entity_id = ?") { it.bindText(1, entityId) }
+    }
+
+    fun pendingRemovals(): Set<String> = synchronized(lock) {
+        conn.query("SELECT entity_id FROM pending_removal ORDER BY entity_id", {}) { it.getText(0) }.toSet()
     }
 
     // ── 附件映射 ─────────────────────────────────────────────────────────────

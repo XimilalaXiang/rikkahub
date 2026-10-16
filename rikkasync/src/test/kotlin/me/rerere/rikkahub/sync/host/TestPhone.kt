@@ -8,8 +8,9 @@ import me.rerere.rikkahub.sync.engine.SyncEngine
 import me.rerere.rikkahub.sync.state.SyncStateDb
 
 /** 一台"手机":自己的 Room 同结构数据库 + 同步状态库 + 适配器 + 引擎,连到测试服务器。 */
-class TestPhone(server: ServerHarness, keys: Keys, name: String, withAttachments: Boolean = false, withFolders: Boolean = false) : AutoCloseable {
+class TestPhone(server: ServerHarness, keys: Keys, name: String, withAttachments: Boolean = false, withFolders: Boolean = false, withAssistants: Boolean = false) : AutoCloseable {
     val store: TestAttachmentStore? = if (withAttachments) TestAttachmentStore(java.nio.file.Files.createTempDirectory("rks-att-").toFile()) else null
+    val assistants: TestAssistantSink? = if (withAssistants) TestAssistantSink() else null
     val db: SqlDb
     private val closeDb: AutoCloseable
     val syncDb: SyncStateDb = SyncStateDb.openOrRecover(BundledSQLiteDriver(), ":memory:")
@@ -25,7 +26,7 @@ class TestPhone(server: ServerHarness, keys: Keys, name: String, withAttachments
         db = d
         closeDb = close
         sink = RawRowSink(db)
-        host = AndroidConversationHost(db, syncDb, sink, isBusy = { it in busy }, appVersion = "test", attachments = store, folderSink = if (withFolders) RawFolderSink(db) else null, now = { clock }, newId = { "$name-id-${++ids}" })
+        host = AndroidConversationHost(db, syncDb, sink, isBusy = { it in busy }, appVersion = "test", attachments = store, folderSink = if (withFolders) RawFolderSink(db) else null, assistantSink = assistants, now = { clock }, newId = { "$name-id-${++ids}" })
         val (token, id) = server.createDevice(name)
         engine = SyncEngine(SyncClient(server.url, token), keys, host, syncDb, id)
     }

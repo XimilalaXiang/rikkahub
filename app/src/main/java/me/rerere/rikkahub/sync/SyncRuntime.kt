@@ -16,13 +16,18 @@ import androidx.work.WorkerParameters
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.data.db.AppDatabase
+import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.sync.controller.SyncController
 import me.rerere.rikkahub.sync.host.AndroidConversationHost
+import me.rerere.rikkahub.sync.host.AppAssistantSink
 import me.rerere.rikkahub.sync.host.AppAttachmentStore
 import me.rerere.rikkahub.sync.host.AppConversationSink
 import me.rerere.rikkahub.sync.host.AppFolderSink
@@ -49,10 +54,12 @@ class SyncRuntime(
     conversationRepository: ConversationRepository,
     chatService: ChatService,
     filesManager: FilesManager,
+    settingsStore: SettingsStore,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val sqlDb = RoomSqlDb(database)
     private val attachmentStore = AppAttachmentStore(filesManager, app.filesDir)
+    private val settings = settingsStore
 
     val config = SyncConfigStore(syncDir(app), KeystoreSecretBox())
 
@@ -69,6 +76,7 @@ class SyncRuntime(
                 appVersion = runCatching { app.packageManager.getPackageInfo(app.packageName, 0).versionName }.getOrNull() ?: "unknown",
                 attachments = attachmentStore,
                 folderSink = AppFolderSink(database.folderDao()),
+                assistantSink = AppAssistantSink(settingsStore),
             )
         },
         pendingLocalChanges = { runCatching { DirtyTracker(sqlDb).count() }.getOrNull() },
@@ -86,6 +94,10 @@ class SyncRuntime(
                 scope.launch { runCatching { controller.stop() }.onFailure { Log.e(TAG, "stop failed", it) } }
             }
         })
+        // 助手存在设置里,没有脏标记:变化时直接唤醒控制器(防抖后跑一轮);兜底仍是 60 秒心跳。
+        scope.launch {
+            settings.settingsFlow.map { it.assistants }.distinctUntilChanged().drop(1).collect { controller.notifyLocalChange() }
+        }
         refreshSchedule()
     }
 
