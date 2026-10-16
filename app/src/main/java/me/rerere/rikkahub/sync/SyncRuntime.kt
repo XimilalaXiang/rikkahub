@@ -18,10 +18,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.data.db.AppDatabase
+import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.sync.controller.SyncController
 import me.rerere.rikkahub.sync.host.AndroidConversationHost
+import me.rerere.rikkahub.sync.host.AppAttachmentStore
 import me.rerere.rikkahub.sync.host.AppConversationSink
 import me.rerere.rikkahub.sync.host.DirtyTracker
 import me.rerere.rikkahub.sync.host.RoomSqlDb
@@ -45,9 +47,11 @@ class SyncRuntime(
     database: AppDatabase,
     conversationRepository: ConversationRepository,
     chatService: ChatService,
+    filesManager: FilesManager,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val sqlDb = RoomSqlDb(database)
+    private val attachmentStore = AppAttachmentStore(filesManager, app.filesDir)
 
     val config = SyncConfigStore(syncDir(app), KeystoreSecretBox())
 
@@ -62,6 +66,7 @@ class SyncRuntime(
                 sink = AppConversationSink(conversationRepository, chatService, chatService.sessionManager),
                 isBusy = { chatService.sessionManager.isConversationBusy(it) },
                 appVersion = runCatching { app.packageManager.getPackageInfo(app.packageName, 0).versionName }.getOrNull() ?: "unknown",
+                attachments = attachmentStore,
             )
         },
         pendingLocalChanges = { runCatching { DirtyTracker(sqlDb).count() }.getOrNull() },

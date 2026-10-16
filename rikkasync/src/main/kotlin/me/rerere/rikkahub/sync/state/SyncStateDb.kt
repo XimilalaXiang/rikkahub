@@ -49,6 +49,10 @@ class SyncStateDb(private val conn: SQLiteConnection) : StateStore, AutoCloseabl
                 "verified_at INTEGER NOT NULL, PRIMARY KEY (kind, id))",
         )
         conn.execSQL("CREATE INDEX IF NOT EXISTS idx_fp_cache_verified ON fp_cache(kind, verified_at)")
+        // 附件:块 id ↔ 本机文件(相对路径)。块 id 是内容的带密钥 HMAC,所以同内容同块。
+        conn.execSQL("CREATE TABLE IF NOT EXISTS blob_map (blob_id TEXT PRIMARY KEY NOT NULL, local_ref TEXT NOT NULL)")
+        // 本机文件 → 块 id 的缓存:块 id 要读全部字节算 HMAC,不能每次推送都重算。键里带 size 与 mtime,文件换了内容自然失效。
+        conn.execSQL("CREATE TABLE IF NOT EXISTS file_blob_cache (local_ref TEXT PRIMARY KEY NOT NULL, size INTEGER NOT NULL, mtime_ms INTEGER NOT NULL, blob_id TEXT NOT NULL)")
         if (version < SCHEMA_VERSION) conn.execSQL("PRAGMA user_version = $SCHEMA_VERSION")
     }
 
@@ -112,6 +116,37 @@ class SyncStateDb(private val conn: SQLiteConnection) : StateStore, AutoCloseabl
             conn.execSQL("DELETE FROM sync_entity")
             conn.execSQL("DELETE FROM sync_meta")
             conn.execSQL("DELETE FROM fp_cache")
+            conn.execSQL("DELETE FROM blob_map")
+            conn.execSQL("DELETE FROM file_blob_cache")
+        }
+    }
+
+    // ── 附件映射 ─────────────────────────────────────────────────────────────
+
+    fun setBlob(blobId: String, localRef: String) = synchronized(lock) {
+        conn.run("INSERT INTO blob_map(blob_id, local_ref) VALUES (?, ?) ON CONFLICT(blob_id) DO UPDATE SET local_ref = excluded.local_ref") {
+            it.bindText(1, blobId)
+            it.bindText(2, localRef)
+        }
+    }
+
+    fun localRefOf(blobId: String): String? = synchronized(lock) {
+        conn.queryOne("SELECT local_ref FROM blob_map WHERE blob_id = ?", { it.bindText(1, blobId) }) { it.getText(0) }
+    }
+
+    fun getFileBlob(localRef: String, size: Long, mtimeMs: Long): String? = synchronized(lock) {
+        conn.queryOne("SELECT blob_id FROM file_blob_cache WHERE local_ref = ? AND size = ? AND mtime_ms = ?", { it.bindText(1, localRef); it.bindLong(2, size); it.bindLong(3, mtimeMs) }) { it.getText(0) }
+    }
+
+    fun setFileBlob(localRef: String, size: Long, mtimeMs: Long, blobId: String) = synchronized(lock) {
+        conn.run(
+            "INSERT INTO file_blob_cache(local_ref, size, mtime_ms, blob_id) VALUES (?, ?, ?, ?) " +
+                "ON CONFLICT(local_ref) DO UPDATE SET size = excluded.size, mtime_ms = excluded.mtime_ms, blob_id = excluded.blob_id",
+        ) {
+            it.bindText(1, localRef)
+            it.bindLong(2, size)
+            it.bindLong(3, mtimeMs)
+            it.bindText(4, blobId)
         }
     }
 

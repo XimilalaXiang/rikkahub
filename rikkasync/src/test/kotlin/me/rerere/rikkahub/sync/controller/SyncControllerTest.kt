@@ -174,8 +174,12 @@ class SyncControllerTest {
         e.controller.start()
         waitFor("idle") { e.controller.status.value.phase == SyncPhase.IDLE }
         seed(e.db, "new")
-        val report = e.controller.runNow()
-        assertEquals(1, report.pushed)
+        // 在 seed 和 runNow 之间,SSE/轮询可能已经起了一轮并把它推走了;runNow 之后返回时,
+        // 变更一定已经到了服务器——所以断言服务器侧结果而不是单轮报告的 pushed 数。
+        e.controller.runNow()
+        val (peer, peerDb) = e.otherPhone()
+        peer.syncOnce()
+        assertTrue(titles(peerDb).containsKey("new"))
     }
 
     @Test
@@ -215,7 +219,7 @@ class SyncControllerTest {
         val e = Env()
         seed(e.db, "c1")
         e.controller.start()
-        waitFor("synced") { e.controller.status.value.lastPushed == 1 }
+        waitFor("synced") { e.controller.status.value.lastSyncAt != null }
         e.controller.stop()
         val other = ServerHarness.startOrSkip().also { closers.add(it) }
         e.config.update(serverUrl = other.url, deviceToken = other.createDevice("pc").first)

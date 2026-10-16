@@ -23,6 +23,7 @@ class ConversationApplier(
     private val syncDb: SyncStateDb,
     private val sink: ConversationSink,
     private val isBusy: (conversationId: String) -> Boolean,
+    private val bridge: AttachmentBridge? = null,
     private val tracker: DirtyTracker = DirtyTracker(db),
     private val now: () -> Long = { System.currentTimeMillis() },
     private val newId: () -> String = { UUID.randomUUID().toString() },
@@ -32,7 +33,7 @@ class ConversationApplier(
     private val json = Json
 
     /** 返回落库后的指纹(= 此后 scan() 对该会话报告的值,docs/03 H3)。永久性数据错误抛 PermanentApplyException。 */
-    suspend fun apply(remote: RemoteEntity, @Suppress("UNUSED_PARAMETER") io: ApplyIO? = null): String {
+    suspend fun apply(remote: RemoteEntity, io: ApplyIO? = null): String {
         val wire = ConversationWire.parse(remote.data, remote.id)
         // 绝不在生成中覆盖:引擎本来就会因 isBusy 把远端变更 HOLD,这里是最后一道防线。
         check(!isBusy(remote.id)) { "conversation ${remote.id} is busy" }
@@ -46,7 +47,17 @@ class ConversationApplier(
         columns["config"] = JsonPrimitive(mergeConfig(wire.columns.getValue("config").stringValue(), existing?.config.orEmpty()))
         // updateAt 用远端的值:wire.columns 里已经是它。
 
-        sink.save(ConversationWrite(remote.id, columns, workspaceCwd, wire.nodes, isNew = existing == null))
+        // 附件:先把令牌引用的块取回并保存(失败 = 暂时性错误,引擎稍后重试),再把令牌换成本机 URL。
+        var nodes = wire.nodes
+        if (bridge != null && io != null) {
+            val tokens = LinkedHashMap<String, String>()
+            for (n in nodes) tokens.putAll(AttachmentBridge.tokensIn(n.messages))
+            if (tokens.isNotEmpty()) {
+                val mat = bridge.materialize(tokens, io)
+                nodes = nodes.map { it.copy(messages = bridge.toLocalUrls(it.messages, mat.files)) }
+            }
+        }
+        sink.save(ConversationWrite(remote.id, columns, workspaceCwd, nodes, isNew = existing == null))
         return settle(remote.id)
     }
 

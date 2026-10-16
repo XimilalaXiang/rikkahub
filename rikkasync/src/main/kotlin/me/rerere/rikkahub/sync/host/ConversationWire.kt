@@ -7,7 +7,9 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
+import me.rerere.rikkahub.sync.engine.BlobUpload
 import me.rerere.rikkahub.sync.engine.EntitySnapshot
+import me.rerere.rikkahub.sync.engine.HostContext
 import me.rerere.rikkahub.sync.engine.PermanentApplyException
 
 /** 线上一个节点:messages 是不透明字符串,绝不解析后重新序列化。 */
@@ -56,15 +58,22 @@ object ConversationWire {
         )
     }
 
-    /** 读取一个会话并序列化;会话不存在返回 null。指纹来自**这次读到的同一批行**(H1/H3)。 */
-    fun read(db: SqlDb, conversationId: String): EntitySnapshot? {
+    /**
+     * 读取一个会话并序列化;会话不存在返回 null。指纹来自**这次读到的同一批行**(H1/H3)。
+     * 提供 [bridge] 时:消息里的本机附件 URL 被换成块令牌,并把用到的块列进 `blobs`(只列本机真有字节的块)。
+     */
+    fun read(db: SqlDb, conversationId: String, ctx: HostContext? = null, bridge: AttachmentBridge? = null): EntitySnapshot? {
         val row = ConversationRows.readConversation(db, conversationId) ?: return null
         val nodes = ConversationRows.readNodes(db, conversationId)
+        val wireNodes = if (bridge != null && ctx != null) nodes.map { it.copy(messages = bridge.tokenize(it.messages, ctx)) } else nodes
+        val blobs: List<BlobUpload> = if (bridge == null) emptyList() else
+            wireNodes.flatMap { AttachmentBridge.tokensIn(it.messages).keys }.distinct().filter { bridge.hasLocalBlob(it) }.map { id -> BlobUpload(id) { bridge.readBlob(id) } }
         return EntitySnapshot(
             fmt = AndroidWireContract.FMT,
-            data = toJson(row, nodes),
-            fingerprint = ConversationFingerprint.of(row, nodes),
+            data = toJson(row, wireNodes),
+            fingerprint = ConversationFingerprint.of(row, nodes), // 指纹覆盖本机形态的行,与 scan() 一致
             updatedAt = row.updateAt,
+            blobs = blobs,
         )
     }
 

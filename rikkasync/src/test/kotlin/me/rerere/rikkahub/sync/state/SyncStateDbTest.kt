@@ -160,4 +160,20 @@ class SyncStateDbTest {
         threads.forEach { it.join() }
         assertEquals(400, db.entries().size)
     }
+
+    @Test
+    fun `file to blob cache only hits for the exact size and mtime and is cleared by reset`() {
+        val db = open()
+        db.setFileBlob("upload/a.png", 10, 100, "b1")
+        assertEquals("b1", db.getFileBlob("upload/a.png", 10, 100))
+        assertNull(db.getFileBlob("upload/a.png", 11, 100))
+        assertNull(db.getFileBlob("upload/a.png", 10, 101))
+        db.setFileBlob("upload/a.png", 11, 100, "b2") // 文件被改写:覆盖旧条目
+        assertNull(db.getFileBlob("upload/a.png", 10, 100))
+        db.setBlob("b2", "upload/a.png")
+        assertEquals("upload/a.png", db.localRefOf("b2"))
+        db.reset()
+        assertNull(db.getFileBlob("upload/a.png", 11, 100))
+        assertNull(db.localRefOf("b2"))
+    }
 }

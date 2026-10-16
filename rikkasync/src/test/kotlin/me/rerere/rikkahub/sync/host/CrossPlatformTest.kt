@@ -11,6 +11,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.rikkahub.sync.engine.Crypto
 import me.rerere.rikkahub.sync.engine.ServerHarness
 import org.junit.After
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -166,5 +167,48 @@ class CrossPlatformTest {
         val d = desktop()
         assertEquals(setOf("c1"), phone.ids())
         assertEquals(1, d.getValue("conversations").jsonArray.size)
+    }
+
+    private val png = byteArrayOf(-119, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3, 4, 5, 6)
+
+    private fun JsonObject.files() = getValue("files").jsonArray.map { it.jsonObject }
+    private fun JsonObject.fileBytes(f: JsonObject) = java.util.Base64.getDecoder().decode(f.getValue("base64").jsonPrimitive.content)
+
+    @Test
+    fun `an attachment created on the desktop reaches the phone as a real local file with identical bytes`() = runBlocking {
+        val phone = TestPhone(server, keys, "phone", withAttachments = true).also { closers.add(it) }
+        val id = "00000000-0000-4000-8000-0000000000e1"
+        desktop("--create-with-file", id, "桌面带图", "桌面图片.png", java.util.Base64.getEncoder().encodeToString(png))
+        repeat(3) { phone.engine.syncOnce() }
+        val text = phone.nodes(id).single().messages
+        assertFalse("令牌必须被换成本机 URL", text.contains("rks-blob://"))
+        assertFalse("桌面的 /api/files 引用不能漏到手机", text.contains("/api/files/"))
+        val url = Regex("file://[^\"\\\\]+").find(text)!!.value
+        val att = phone.store!!.describe(url)!!
+        assertEquals("桌面图片.png", att.displayName)
+        assertArrayEquals(png, att.read())
+        assertEquals(0, phone.engine.syncOnce().let { it.pushed + it.applied })
+    }
+
+    @Test
+    fun `an attachment created on the phone lands in the desktop file ledger and survives the round trip unchanged`() = runBlocking {
+        val phone = TestPhone(server, keys, "phone", withAttachments = true).also { closers.add(it) }
+        val url = phone.store!!.addLocal(png, "手机图.png")
+        val msg = """[{"id":"6d1e5c8e-2f6a-4c5a-9a3e-0000000000c9","role":"user","parts":[{"type":"text","text":"看图"},{"type":"image","url":"$url"}],"createdAt":"2026-01-01T00:00:00"}]"""
+        TestAndroidDb.insertConversation(phone.db, "c1", title = "手机带图")
+        TestAndroidDb.insertNode(phone.db, "n0", "c1", 0, msg)
+        repeat(3) { phone.engine.syncOnce() }
+        val d = desktop()
+        val nodeText = d.conv("c1").getValue("nodes").jsonArray[0].jsonObject.getValue("messages").jsonPrimitive.content
+        assertFalse(nodeText.contains("rks-blob://"))
+        assertTrue("桌面消息指向文件账本", Regex("/api/files/\\d+/content").containsMatchIn(nodeText))
+        val file = d.files().single()
+        assertEquals("手机图.png", file.getValue("fileName").jsonPrimitive.content)
+        assertArrayEquals(png, d.fileBytes(file))
+        // 桌面改标题后回到手机:手机上的消息(含本机附件 URL)逐字节不变
+        desktop("--edit-title", "c1", "桌面改了")
+        repeat(3) { phone.engine.syncOnce() }
+        assertEquals("桌面改了", phone.row("c1").title)
+        assertEquals(msg, phone.nodes("c1").single().messages)
     }
 }
