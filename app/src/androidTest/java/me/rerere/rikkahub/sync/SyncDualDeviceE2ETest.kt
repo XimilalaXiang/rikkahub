@@ -107,12 +107,15 @@ class SyncDualDeviceE2ETest {
         }
     }
 
-    private suspend fun seedMain(id: String, title: String, text: String, updateAt: Long) {
+    /** Android 落库路径会完整解码消息;message id 必须是标准 UUID(见 android-contract 事故)。 */
+    private fun messageJson(messageId: String, text: String) =
+        """[{"id":"$messageId","role":"user","parts":[{"type":"text","text":"$text"}],"createdAt":"2026-01-01T00:00:00"}]"""
+
+    private suspend fun seedMain(id: String, title: String, text: String, updateAt: Long, messageId: String, nodeId: String) {
         val db = GlobalContext.get().get<AppDatabase>()
         DirtyTracker(RoomSqlDb(db)).install()
         db.conversationDao().insert(ConversationEntity(id, assistantId, title, "[]", 1, updateAt, "[]", false))
-        val msg = """[{"id":"$id-m0","role":"user","parts":[{"type":"text","text":"$text"}],"createdAt":"2026-01-01T00:00:00"}]"""
-        db.messageNodeDao().insertAll(listOf(MessageNodeEntity("$id-n0", id, 0, msg, 0)))
+        db.messageNodeDao().insertAll(listOf(MessageNodeEntity(nodeId, id, 0, messageJson(messageId, text), 0)))
     }
 
     @Test
@@ -121,13 +124,15 @@ class SyncDualDeviceE2ETest {
         val (runtime, peer) = setup()
         try {
             val id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
-            val msg = """[{"id":"m","role":"user","parts":[{"type":"text","text":"same"}],"createdAt":"2026-01-01T00:00:00"}]"""
-            seedMain(id, "aligned", "same", 1000)
+            val messageId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa01"
+            val nodeId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa02"
+            val msg = messageJson(messageId, "same")
+            seedMain(id, "aligned", "same", 1000, messageId, nodeId)
             peer.sql.exec(
                 "INSERT OR REPLACE INTO ConversationEntity (id, assistant_id, title, nodes, create_at, update_at, suggestions, is_pinned, custom_system_prompt, mode_injection_ids, lorebook_ids, workspace_cwd, folder_id, config) VALUES (?, ?, ?, '[]', 1, 1000, '[]', 0, '', '[]', '[]', '', '', '')",
                 listOf(id, assistantId, "aligned"),
             )
-            peer.sql.exec("INSERT OR REPLACE INTO message_node (id, conversation_id, node_index, messages, select_index) VALUES (?, ?, 0, ?, 0)", listOf("$id-n0", id, msg))
+            peer.sql.exec("INSERT OR REPLACE INTO message_node (id, conversation_id, node_index, messages, select_index) VALUES (?, ?, 0, ?, 0)", listOf(nodeId, id, msg))
             runtime.controller.syncOnceNow()
             peer.engine.syncOnce()
             runtime.controller.syncOnceNow()
@@ -145,7 +150,7 @@ class SyncDualDeviceE2ETest {
         val (runtime, peer) = setup()
         try {
             val id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
-            seedMain(id, "phone", "body", 1000)
+            seedMain(id, "phone", "body", 1000, "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb01", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb02")
             runtime.controller.syncOnceNow()
             peer.engine.syncOnce()
             peer.sql.exec("UPDATE ConversationEntity SET title = ?, update_at = ? WHERE id = ?", listOf("from-peer", 9000L, id))
