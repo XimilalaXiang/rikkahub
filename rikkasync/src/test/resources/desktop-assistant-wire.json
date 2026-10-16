@@ -1,0 +1,59 @@
+{
+  "id": "44444444-4444-4444-8444-444444444444",
+  "name": "桌面助手",
+  "avatar": {
+    "type": "me.rerere.rikkahub.data.model.Avatar.Emoji",
+    "content": "🐼"
+  },
+  "useAssistantAvatar": false,
+  "systemPrompt": "桌面的系统提示词",
+  "chatModelId": null,
+  "temperature": 0.5,
+  "topP": null,
+  "contextMessageLimit": 0,
+  "maxTokens": null,
+  "streamOutput": true,
+  "enableMemory": false,
+  "useGlobalMemory": false,
+  "enableRecentChatsReference": false,
+  "messageTemplate": "{{ message }}",
+  "presetMessages": [
+    {
+      "role": "user",
+      "parts": [
+        {
+          "type": "text",
+          "text": "hello"
+        }
+      ]
+    }
+  ],
+  "regexes": [
+    {
+      "id": "0b8a2f7e-5d1c-4a39-9e47-000000000001",
+      "name": "r",
+      "enabled": true,
+      "findRegex": "a",
+      "replaceString": "b",
+      "affectingScope": [
+        "USER"
+      ],
+      "visualOnly": false
+    }
+  ],
+  "reasoningLevel": "high",
+  "customHeaders": [
+    {
+      "name": "X-A",
+      "value": "1"
+    }
+  ],
+  "customBodies": [
+    {
+      "key": "k",
+      "value": "v"
+    }
+  ],
+  "enableTimeReminder": false,
+  "allowConversationSystemPrompt": false
+}

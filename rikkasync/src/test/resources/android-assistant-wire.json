@@ -1,0 +1,71 @@
+{
+    "id": "55555555-5555-4555-8555-555555555555",
+    "name": "手机助手",
+    "avatar": {
+        "type": "me.rerere.rikkahub.data.model.Avatar.Emoji",
+        "content": "🦊"
+    },
+    "useAssistantAvatar": true,
+    "systemPrompt": "你是写作助手",
+    "chatModelId": null,
+    "temperature": 0.7,
+    "topP": 0.9,
+    "contextMessageLimit": 20,
+    "maxTokens": 2048,
+    "streamOutput": false,
+    "enableMemory": true,
+    "useGlobalMemory": true,
+    "enableRecentChatsReference": true,
+    "messageTemplate": "{{ message }}!",
+    "presetMessages": [
+        {
+            "id": "6d1e5c8e-2f6a-4c5a-9a3e-0000000000d1",
+            "role": "user",
+            "parts": [
+                {
+                    "type": "text",
+                    "text": "hi",
+                    "metadata": null
+                }
+            ],
+            "annotations": [],
+            "createdAt": "2026-01-01T00:00",
+            "finishedAt": null,
+            "modelId": null,
+            "modelSnapshot": null,
+            "usage": null,
+            "translation": null,
+            "isContextCheckpoint": false
+        }
+    ],
+    "regexes": [
+        {
+            "id": "0b8a2f7e-5d1c-4a39-9e47-000000000001",
+            "name": "r",
+            "enabled": true,
+            "findRegex": "a",
+            "replaceString": "b",
+            "affectingScope": [
+                "USER"
+            ],
+            "visualOnly": false
+        }
+    ],
+    "reasoningLevel": "high",
+    "customHeaders": [
+        {
+            "name": "X-A",
+            "value": "1"
+        }
+    ],
+    "customBodies": [
+        {
+            "key": "k",
+            "value": "v"
+        }
+    ],
+    "enableWebSearch": true,
+    "enableTimeReminder": true,
+    "timeReminderIntervalMinutes": 15,
+    "allowConversationSystemPrompt": true
+}

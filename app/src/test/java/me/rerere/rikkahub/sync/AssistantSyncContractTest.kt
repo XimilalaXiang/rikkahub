@@ -8,6 +8,7 @@ import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.sync.host.AssistantContract
 import me.rerere.rikkahub.sync.host.AssistantWire
 import me.rerere.rikkahub.utils.JsonInstant
+import me.rerere.rikkahub.utils.JsonInstantPretty
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -49,6 +50,50 @@ class AssistantSyncContractTest {
         val back = json.decodeFromJsonElement(Assistant.serializer(), merged)
         assertEquals(a.copy(mcpServers = emptySet(), workspaceId = null, background = null), back.copy(mcpServers = emptySet(), workspaceId = null, background = null))
         assertEquals(synced.keys.toList(), AssistantContract.SYNCED_FIELDS.filter { it in synced.keys })
+    }
+
+    @Test
+    fun `the golden record produced by the real desktop adapter decodes with the real Assistant class`() {
+        // 桌面适配器产出的线形态(rikkasync 的 CrossPlatformTest 保证它与桌面当前输出一致)。
+        val golden = json.parseToJsonElement(java.io.File("../rikkasync/src/test/resources/desktop-assistant-wire.json").readText()).jsonObject
+        val a = json.decodeFromJsonElement(Assistant.serializer(), AssistantWire.merge(null, golden, emptySet()))
+        assertEquals("桌面助手", a.name)
+        assertEquals("桌面的系统提示词", a.systemPrompt)
+        assertEquals(me.rerere.ai.core.ReasoningLevel.HIGH, a.reasoningLevel)
+        assertEquals(0.5f, a.temperature)
+        assertEquals(1, a.regexes.size)
+        assertEquals("X-A", a.customHeaders.single().name)
+        assertEquals(1, a.presetMessages.size)
+        assertTrue(a.avatar is me.rerere.rikkahub.data.model.Avatar.Emoji)
+        // 设备本地字段是 Assistant 的默认值
+        assertEquals(emptySet<Uuid>(), a.mcpServers)
+    }
+
+    @Test
+    fun `the real Android encoding of a fully populated assistant equals the checked-in golden record`() {
+        val a = Assistant(
+            id = Uuid.parse("55555555-5555-4555-8555-555555555555"), name = "手机助手", avatar = me.rerere.rikkahub.data.model.Avatar.Emoji("🦊"),
+            useAssistantAvatar = true, systemPrompt = "你是写作助手", temperature = 0.7f, topP = 0.9f, contextMessageLimit = 20, maxTokens = 2048,
+            streamOutput = false, enableMemory = true, useGlobalMemory = true, enableRecentChatsReference = true, messageTemplate = "{{ message }}!",
+            presetMessages = listOf(
+                me.rerere.ai.ui.UIMessage(
+                    id = Uuid.parse("6d1e5c8e-2f6a-4c5a-9a3e-0000000000d1"), role = me.rerere.ai.core.MessageRole.USER,
+                    parts = listOf(me.rerere.ai.ui.UIMessagePart.Text("hi")),
+                    createdAt = kotlinx.datetime.LocalDateTime(2026, 1, 1, 0, 0, 0),
+                ),
+            ),
+            regexes = listOf(me.rerere.rikkahub.data.model.AssistantRegex(id = Uuid.parse("0b8a2f7e-5d1c-4a39-9e47-000000000001"), name = "r", findRegex = "a", replaceString = "b", affectingScope = setOf(me.rerere.rikkahub.data.model.AssistantAffectScope.USER))),
+            reasoningLevel = me.rerere.ai.core.ReasoningLevel.HIGH,
+            customHeaders = listOf(me.rerere.ai.provider.CustomHeader("X-A", "1")),
+            customBodies = listOf(me.rerere.ai.provider.CustomBody("k", JsonPrimitive("v"))),
+            enableWebSearch = true, enableTimeReminder = true, timeReminderIntervalMinutes = 15, allowConversationSystemPrompt = true,
+        )
+        val synced = AssistantWire.synced(encode(a))
+        val file = java.io.File("../rikkasync/src/test/resources/android-assistant-wire.json")
+        if (System.getenv("UPDATE_GOLDEN") == "1") file.writeText(JsonInstantPretty.encodeToString(JsonObject.serializer(), synced) + "\n")
+        assertEquals(json.parseToJsonElement(file.readText()), synced)
+        // 并且能原样解码回来
+        assertEquals(a, json.decodeFromJsonElement(Assistant.serializer(), AssistantWire.merge(null, synced, emptySet())))
     }
 
     @Test

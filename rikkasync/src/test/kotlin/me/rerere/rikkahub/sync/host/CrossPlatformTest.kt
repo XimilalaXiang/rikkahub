@@ -240,4 +240,93 @@ class CrossPlatformTest {
         repeat(3) { phone.engine.syncOnce() }
         assertTrue(desktop().folders().isEmpty())
     }
+
+    private fun JsonObject.assistants() = getValue("assistants").jsonArray.map { it.jsonObject }
+    private val assistantId = "44444444-4444-4444-8444-444444444444"
+
+    @Test
+    fun `both sides agree on which assistant fields are synced and which are device-local`() = runBlocking {
+        val c = desktop().getValue("assistantContract").jsonObject
+        assertEquals(AssistantContract.SYNCED_FIELDS, c.getValue("synced").jsonArray.map { it.jsonPrimitive.content })
+        assertEquals(AssistantContract.DEVICE_LOCAL_FIELDS, c.getValue("deviceLocal").jsonArray.map { it.jsonPrimitive.content })
+        assertEquals(AssistantContract.BUILT_IN_IDS, c.getValue("builtIn").jsonArray.map { it.jsonPrimitive.content }.toSet())
+    }
+
+    @Test
+    fun `an android assistant passes through the desktop, edits come back, and android-only data survives byte for byte`() = runBlocking {
+        val phone = TestPhone(server, keys, "phone", withAssistants = true).also { closers.add(it) }
+        val exotic = Json.parseToJsonElement("""[{"id":"6d1e5c8e-2f6a-4c5a-9a3e-0000000000d1","role":"user","parts":[{"type":"text","text":"hi"},{"type":"futurePart","payload":{"deep":[1,2]}}],"createdAt":"2026-01-01T00:00:00.123456","futureField":true}]""")
+        val original = TestAssistantSink.assistant(
+            assistantId, "手机助手",
+            "systemPrompt" to JsonPrimitive("你是写作助手"), "reasoningLevel" to JsonPrimitive("high"), "timeReminderIntervalMinutes" to JsonPrimitive(30),
+            "presetMessages" to exotic, "mcpServers" to JsonArray(listOf(JsonPrimitive("phone-mcp"))), "workspaceId" to JsonPrimitive("w1"),
+            "avatar" to Json.parseToJsonElement("""{"type":"me.rerere.rikkahub.data.model.Avatar.Emoji","content":"🦊"}"""),
+        )
+        phone.assistants!!.items[assistantId] = original
+        repeat(3) { phone.engine.syncOnce() }
+        val d1 = desktop()
+        val onDesktop = d1.assistants().first { it.getValue("id").jsonPrimitive.content == assistantId }
+        assertEquals("手机助手", onDesktop.getValue("name").jsonPrimitive.content)
+        assertEquals("HIGH", onDesktop.getValue("reasoningLevel").jsonPrimitive.content)
+        assertEquals("[]", onDesktop.getValue("mcpServers").toString()) // 手机的设备本地字段没有过来
+
+        // 桌面改 systemPrompt 并加一个桌面独有字段;手机收到改动,其余逐字节不变,设备本地字段保持
+        desktop("--edit-assistant", assistantId, "systemPrompt", "\"桌面改的提示词\"", "--edit-assistant", assistantId, "mcpToolOverrides", """{"s":{"t":{"enable":false}}}""")
+        repeat(3) { phone.engine.syncOnce() }
+        val now = phone.assistants!!.items.getValue(assistantId)
+        assertEquals("桌面改的提示词", now.getValue("systemPrompt").jsonPrimitive.content)
+        assertEquals(exotic, now["presetMessages"])
+        assertEquals(JsonPrimitive("high"), now["reasoningLevel"])
+        assertEquals(JsonPrimitive(30), now["timeReminderIntervalMinutes"])
+        assertEquals(original["avatar"], now["avatar"])
+        assertEquals(original["mcpServers"], now["mcpServers"])
+        assertEquals(original["workspaceId"], now["workspaceId"])
+        assertFalse("mcpToolOverrides" in now)
+        assertEquals(0, phone.engine.syncOnce().let { it.pushed + it.applied })
+    }
+
+    @Test
+    fun `an assistant created on the desktop reaches the phone in Android shape, and deleting works both ways`() = runBlocking {
+        val phone = TestPhone(server, keys, "phone", withAssistants = true).also { closers.add(it) }
+        desktop("--create-assistant", assistantId, "桌面助手", "桌面的系统提示词")
+        repeat(3) { phone.engine.syncOnce() }
+        val wire = phone.assistants!!.items.getValue(assistantId)
+        assertEquals("桌面助手", wire.getValue("name").jsonPrimitive.content)
+        assertEquals("high", wire.getValue("reasoningLevel").jsonPrimitive.content)
+        assertEquals("me.rerere.rikkahub.data.model.Avatar.Emoji", wire.getValue("avatar").jsonObject.getValue("type").jsonPrimitive.content)
+        assertEquals(JsonArray(emptyList()), wire["mcpServers"]) // 桌面的 mcpServers 是设备本地,没过来(TestAssistantSink 补默认值)
+        // 桌面产出的线形态与签入的 golden 逐字段一致;app 模块的测试用上游真实的 Assistant 类解码同一份 golden(见 AssistantSyncContractTest)
+        val golden = Json.parseToJsonElement(File("src/test/resources/desktop-assistant-wire.json").readText()).jsonObject
+        for ((k, v) in golden) assertEquals("字段 $k", v, wire[k])
+        // 桌面删除 → 手机(没有它的会话)随之删除
+        desktop("--delete-assistant", assistantId)
+        repeat(3) { phone.engine.syncOnce() }
+        assertFalse(assistantId in phone.assistants!!.items)
+        // 手机再建一个,删掉 → 桌面跟着删
+        phone.assistants!!.items[assistantId] = TestAssistantSink.assistant(assistantId, "手机建的")
+        repeat(3) { phone.engine.syncOnce() }
+        assertTrue(desktop().assistants().any { it.getValue("id").jsonPrimitive.content == assistantId })
+        phone.assistants!!.items.remove(assistantId)
+        repeat(3) { phone.engine.syncOnce() }
+        assertFalse(desktop().assistants().any { it.getValue("id").jsonPrimitive.content == assistantId })
+    }
+
+    @Test
+    fun `the real android encoding of an assistant survives a desktop round trip unchanged except for what the desktop edited`() = runBlocking {
+        val phone = TestPhone(server, keys, "phone", withAssistants = true).also { closers.add(it) }
+        // golden 由 app 模块的测试用上游真实的 Assistant 序列化器生成并校验(AssistantSyncContractTest)
+        val golden = Json.parseToJsonElement(File("src/test/resources/android-assistant-wire.json").readText()).jsonObject
+        val id = golden.getValue("id").jsonPrimitive.content
+        phone.assistants!!.items[id] = JsonObject(TestAssistantSink.assistant(id, "").toMap() + golden)
+        repeat(3) { phone.engine.syncOnce() }
+        val onDesktop = desktop().assistants().first { it.getValue("id").jsonPrimitive.content == id }
+        assertEquals("手机助手", onDesktop.getValue("name").jsonPrimitive.content)
+        assertEquals("HIGH", onDesktop.getValue("reasoningLevel").jsonPrimitive.content)
+        desktop("--edit-assistant", id, "name", "\"桌面改名\"")
+        repeat(3) { phone.engine.syncOnce() }
+        val back = phone.assistants!!.items.getValue(id)
+        for ((k, v) in golden) if (k != "name") assertEquals("字段 $k 逐字节不变", v, back[k])
+        assertEquals("桌面改名", back.getValue("name").jsonPrimitive.content)
+        assertEquals(0, phone.engine.syncOnce().let { it.pushed + it.applied })
+    }
 }

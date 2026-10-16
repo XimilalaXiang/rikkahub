@@ -91,6 +91,12 @@ object AssistantWire {
         }
     }
 
+    /** 两个同步形态在双方都有的键上逐项相等,且双方都有 name(某一端没有的字段按"取默认值"理解,不算差异)。 */
+    fun sameOnCommonKeys(a: JsonObject, b: JsonObject): Boolean {
+        if ("name" !in a || "name" !in b) return false
+        return a.keys.all { k -> k !in b || stableJson(a.getValue(k)) == stableJson(b.getValue(k)) }
+    }
+
     fun fingerprint(syncedForm: JsonObject): String =
         "af1:" + MessageDigest.getInstance("SHA-256").digest(stableJson(syncedForm).toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
 
@@ -188,14 +194,14 @@ class AssistantHost(
         db.query("SELECT 1 FROM ConversationEntity WHERE assistant_id = ? LIMIT 1", listOf(assistantId)) { it.long(0) }.isNotEmpty()
 
     /**
-     * 首次接触(两端都有同 id 的助手,从未同步过):同步形态相同 → 认领;本机是"从未改过的内置助手" → 以远端为准(没有东西可丢);
+     * 首次接触(两端都有同 id 的助手,从未同步过):同步形态在共有字段上相同 → 认领;本机是"从未改过的内置助手" → 以远端为准(没有东西可丢);
      * 其它 → diverged(取远端,本机另存为副本,绝不静默覆盖用户改过的助手)。
      */
     suspend fun compareFirstContact(local: LocalRef, remote: RemoteSnapshotInfo): FirstContactRelation {
         val full = localOf(local.id) ?: return FirstContactRelation.REMOTE_NEWER
         val remoteSynced = (remote.data as? JsonObject) ?: return FirstContactRelation.DIVERGED
         val localSynced = AssistantWire.synced(full)
-        if (stableJson(localSynced) == stableJson(remoteSynced)) return FirstContactRelation.SAME
+        if (AssistantWire.sameOnCommonKeys(localSynced, remoteSynced)) return FirstContactRelation.SAME
         val id = AssistantContract.assistantIdOf(local.id)
         val builtIn = id?.let { sink.builtIn(it) }
         if (builtIn != null && stableJson(AssistantWire.synced(builtIn)) == stableJson(localSynced)) return FirstContactRelation.REMOTE_NEWER
