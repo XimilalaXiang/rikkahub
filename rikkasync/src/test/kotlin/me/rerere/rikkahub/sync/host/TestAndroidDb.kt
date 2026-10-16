@@ -19,7 +19,7 @@ object TestAndroidDb {
     fun latestSchemaVersion(): Int = schemasDir.listFiles()!!.mapNotNull { it.nameWithoutExtension.toIntOrNull() }.max()
 
     /** 返回 (db, close)。foreign_keys 打开,与 Room 一致(Room 默认开启外键)。 */
-    fun open(tables: Set<String> = setOf(AndroidWireContract.CONVERSATION_TABLE, AndroidWireContract.NODE_TABLE)): Pair<SqlDb, AutoCloseable> {
+    fun open(tables: Set<String> = setOf(AndroidWireContract.CONVERSATION_TABLE, AndroidWireContract.NODE_TABLE, "conversation_folder")): Pair<SqlDb, AutoCloseable> {
         val conn = BundledSQLiteDriver().open(":memory:")
         val db = ConnectionSqlDb(conn)
         db.exec("PRAGMA foreign_keys = ON")
@@ -43,5 +43,9 @@ object TestAndroidDb {
 
     fun insertNode(db: SqlDb, id: String, conversationId: String, index: Int, messages: String = "[]", select: Int = 0) {
         db.exec("INSERT OR REPLACE INTO message_node (id, conversation_id, node_index, messages, select_index) VALUES (?, ?, ?, ?, ?)", listOf(id, conversationId, index, messages, select))
+    }
+
+    fun insertFolder(db: SqlDb, id: String, name: String, assistantId: String = "0950e2dc-9bd5-4801-afa3-aa887aa36b4e", sortIndex: Int = 0, createAt: Long = 1) {
+        db.exec("INSERT OR REPLACE INTO conversation_folder (id, assistant_id, name, sort_index, create_at) VALUES (?, ?, ?, ?, ?)", listOf(id, assistantId, name, sortIndex, createAt))
     }
 }

@@ -8,7 +8,7 @@ import me.rerere.rikkahub.sync.engine.SyncEngine
 import me.rerere.rikkahub.sync.state.SyncStateDb
 
 /** 一台"手机":自己的 Room 同结构数据库 + 同步状态库 + 适配器 + 引擎,连到测试服务器。 */
-class TestPhone(server: ServerHarness, keys: Keys, name: String, withAttachments: Boolean = false) : AutoCloseable {
+class TestPhone(server: ServerHarness, keys: Keys, name: String, withAttachments: Boolean = false, withFolders: Boolean = false) : AutoCloseable {
     val store: TestAttachmentStore? = if (withAttachments) TestAttachmentStore(java.nio.file.Files.createTempDirectory("rks-att-").toFile()) else null
     val db: SqlDb
     private val closeDb: AutoCloseable
@@ -25,7 +25,7 @@ class TestPhone(server: ServerHarness, keys: Keys, name: String, withAttachments
         db = d
         closeDb = close
         sink = RawRowSink(db)
-        host = AndroidConversationHost(db, syncDb, sink, isBusy = { it in busy }, appVersion = "test", attachments = store, now = { clock }, newId = { "$name-id-${++ids}" })
+        host = AndroidConversationHost(db, syncDb, sink, isBusy = { it in busy }, appVersion = "test", attachments = store, folderSink = if (withFolders) RawFolderSink(db) else null, now = { clock }, newId = { "$name-id-${++ids}" })
         val (token, id) = server.createDevice(name)
         engine = SyncEngine(SyncClient(server.url, token), keys, host, syncDb, id)
     }
@@ -41,6 +41,7 @@ class TestPhone(server: ServerHarness, keys: Keys, name: String, withAttachments
     fun ids() = titles().keys
     fun row(id: String) = ConversationRows.readConversation(db, id)!!
     fun nodes(id: String) = ConversationRows.readNodes(db, id)
+    fun folders(): Map<String, FolderRow> = db.query("SELECT id, assistant_id, name, sort_index, create_at FROM conversation_folder ORDER BY id") { FolderRow(it.text(0), it.text(1), it.text(2), it.long(3), it.long(4)) }.associateBy { it.id }
     fun nodeCount() = db.query("SELECT COUNT(*) FROM message_node") { it.long(0).toInt() }.single()
 
     override fun close() {

@@ -8,6 +8,7 @@ object AndroidWireContract {
     const val SCHEMA_VERSION = 30
     const val FMT = "android-room-$SCHEMA_VERSION"
     const val CONVERSATION_TYPE = "conversation"
+    const val FOLDER_TYPE = "folder"
 
     const val CONVERSATION_TABLE = "ConversationEntity"
     const val NODE_TABLE = "message_node"

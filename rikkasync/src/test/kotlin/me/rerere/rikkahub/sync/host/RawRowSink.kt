@@ -30,3 +30,17 @@ class RawRowSink(private val db: SqlDb) : ConversationSink {
         db.exec("DELETE FROM ConversationEntity WHERE id = ?", listOf(id)) // 外键级联删除节点
     }
 }
+
+/** 测试用的文件夹 Sink:直接写 conversation_folder(与 FolderDAO 的 insert-REPLACE / deleteById 语义相同)。 */
+class RawFolderSink(private val db: SqlDb) : FolderSink {
+    var failWith: Exception? = null
+
+    override suspend fun upsert(row: FolderRow) {
+        failWith?.let { throw it }
+        TestAndroidDb.insertFolder(db, row.id, row.name, row.assistantId, row.sortIndex.toInt(), row.createAt)
+    }
+
+    override suspend fun delete(id: String) {
+        db.exec("DELETE FROM conversation_folder WHERE id = ?", listOf(id))
+    }
+}

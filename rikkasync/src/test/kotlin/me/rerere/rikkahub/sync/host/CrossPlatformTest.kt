@@ -211,4 +211,33 @@ class CrossPlatformTest {
         assertEquals("桌面改了", phone.row("c1").title)
         assertEquals(msg, phone.nodes("c1").single().messages)
     }
+
+    private fun JsonObject.folders() = getValue("folders").jsonArray.map { it.jsonObject }
+
+    @Test
+    fun `an android folder passes through the desktop verbatim, follows renames and deletes, and is never pushed back`() = runBlocking {
+        val phone = TestPhone(server, keys, "phone", withFolders = true).also { closers.add(it) }
+        TestAndroidDb.insertFolder(phone.db, "f1", "工作", sortIndex = 4, createAt = 777)
+        phone.conv("c1", "hi")
+        phone.db.exec("UPDATE ConversationEntity SET folder_id = 'f1' WHERE id = 'c1'")
+        repeat(3) { phone.engine.syncOnce() }
+        val d1 = desktop()
+        assertEquals(1, d1.folders().size)
+        assertEquals("工作", d1.folders()[0].getValue("name").jsonPrimitive.content)
+        assertEquals("4", d1.folders()[0].getValue("sort_index").jsonPrimitive.content)
+
+        // 桌面这一侧动了别的(改会话标题)之后,手机的文件夹与会话归属都不受影响
+        desktop("--edit-title", "c1", "桌面改")
+        repeat(3) { phone.engine.syncOnce() }
+        assertEquals(setOf("f1"), phone.folders().keys)
+        assertEquals("f1", phone.row("c1").folderId)
+
+        phone.db.exec("UPDATE conversation_folder SET name = ? WHERE id = 'f1'", listOf("工作 2"))
+        repeat(3) { phone.engine.syncOnce() }
+        assertEquals("工作 2", desktop().folders().single().getValue("name").jsonPrimitive.content)
+
+        phone.db.exec("DELETE FROM conversation_folder WHERE id = 'f1'")
+        repeat(3) { phone.engine.syncOnce() }
+        assertTrue(desktop().folders().isEmpty())
+    }
 }

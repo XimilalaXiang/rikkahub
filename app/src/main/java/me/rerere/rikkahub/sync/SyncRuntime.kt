@@ -25,6 +25,7 @@ import me.rerere.rikkahub.sync.controller.SyncController
 import me.rerere.rikkahub.sync.host.AndroidConversationHost
 import me.rerere.rikkahub.sync.host.AppAttachmentStore
 import me.rerere.rikkahub.sync.host.AppConversationSink
+import me.rerere.rikkahub.sync.host.AppFolderSink
 import me.rerere.rikkahub.sync.host.DirtyTracker
 import me.rerere.rikkahub.sync.host.RoomSqlDb
 import me.rerere.rikkahub.sync.host.isConversationBusy
@@ -67,6 +68,7 @@ class SyncRuntime(
                 isBusy = { chatService.sessionManager.isConversationBusy(it) },
                 appVersion = runCatching { app.packageManager.getPackageInfo(app.packageName, 0).versionName }.getOrNull() ?: "unknown",
                 attachments = attachmentStore,
+                folderSink = AppFolderSink(database.folderDao()),
             )
         },
         pendingLocalChanges = { runCatching { DirtyTracker(sqlDb).count() }.getOrNull() },
