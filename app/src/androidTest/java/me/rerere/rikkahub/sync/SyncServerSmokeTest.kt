@@ -52,8 +52,13 @@ class SyncServerSmokeTest {
         val syncDir = File(app.noBackupFilesDir, "sync")
         assertTrue("secrets.bin missing", File(syncDir, "secrets.bin").isFile)
         assertTrue("config.json missing", File(syncDir, "config.json").isFile)
-        val secretsAscii = File(syncDir, "secrets.bin").readBytes().decodeToString(ignore = true)
-        assertTrue("secrets must not be plaintext token", !secretsAscii.contains(deviceToken))
+        val secretsBytes = File(syncDir, "secrets.bin").readBytes()
+        assertTrue(
+            "secrets must not be plaintext token",
+            secretsBytes.toList().windowed(deviceToken.length, 1, partialWindows = true).none { w ->
+                w.size == deviceToken.length && w.toByteArray().contentEquals(deviceToken.toByteArray())
+            },
+        )
 
         val jobs = WorkManager.getInstance(app).getWorkInfosForUniqueWork("rikkasync-periodic").get(30, TimeUnit.SECONDS)
         assertTrue("periodic work not scheduled: $jobs", jobs.any { it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.RUNNING })
