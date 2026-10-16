@@ -37,11 +37,15 @@ class SyncServerSmokeTest {
 
         val deviceToken = createDeviceToken(serverUrl.trimEnd('/'), adminToken)
         val runtime = GlobalContext.get().get<SyncRuntime>()
+        runtime.controller.stop()
         runtime.config.clearKey()
+        runtime.config.importKey(SyncInstrumentedFixtures.recoveryKey)
         runtime.config.update(enabled = false, serverUrl = serverUrl.trimEnd('/'), deviceToken = deviceToken)
-        runtime.config.generateKey()
+        SyncRuntime.onBackupRestored(InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as android.app.Application)
+        runtime.controller.resetState()
         runtime.config.update(enabled = true)
         runtime.reload()
+        runtime.controller.stop()
 
         val test = runtime.controller.testConnection()
         assertTrue(test.toString(), test is ConnectionTest.Ok)

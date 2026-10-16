@@ -39,10 +39,7 @@ import kotlinx.serialization.json.jsonPrimitive as jPrim
 /** 同进程双库双 token 模拟两台设备(X1 子集)。runner: serverUrl, adminToken;adb reverse 8787。 */
 @RunWith(AndroidJUnit4::class)
 class SyncDualDeviceE2ETest {
-    companion object {
-        /** 同一测试类共用恢复码(须 companion:JUnit 每测例新建测试实例,实例 lazy 会生成多把密钥)。 */
-        private val classRecovery = Crypto.encodeRecoveryKey(Crypto.generateMasterKey())
-    }
+    private val classRecovery get() = SyncInstrumentedFixtures.recoveryKey
 
     private val app get() = InstrumentationRegistry.getInstrumentation().targetContext
     private val args get() = InstrumentationRegistry.getArguments()
