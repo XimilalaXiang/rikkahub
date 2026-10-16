@@ -47,6 +47,8 @@ class SyncEngine(
 
     private suspend fun pass(): SyncReport {
         val report = SyncReport()
+        // "已上传"只在一轮之内可信:客户端 GC 可能在两轮之间删掉了服务器上的块,长期运行的进程不能一直跳过上传。
+        uploaded.clear()
 
         // 支持签名变化(应用升级)意味着之前被跳过的记录现在也许能读了。
         val sig = host.supportSignature()

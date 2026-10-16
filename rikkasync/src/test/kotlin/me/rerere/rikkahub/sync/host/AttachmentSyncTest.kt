@@ -162,6 +162,33 @@ class AttachmentSyncTest {
     }
 
     @Test
+    fun `a blob removed from the server by garbage collection is uploaded again when it is referenced again`() = run {
+        val a = phone("a"); val b = phone("b")
+        val probe = server.createDevice("gc-probe").first
+        fun blobStatus(method: String): Int {
+            val conn = URL("${server.url}/v1/blobs/${Crypto.blobId(keys, png)}").openConnection() as HttpURLConnection
+            conn.requestMethod = method
+            conn.setRequestProperty("authorization", "Bearer $probe")
+            return conn.responseCode
+        }
+        a.convWithAttachment("c1", png, "photo.png")
+        a.engine.syncOnce()
+        assertEquals(200, blobStatus("HEAD"))
+        val url = localUrlOf(a, "c1")
+        // 用户把附件从消息里拿掉 → 之后块无人引用,被客户端 GC 删除
+        a.db.exec("UPDATE message_node SET messages = ? WHERE id = 'c1-n0'", listOf("""[{"id":"6d1e5c8e-2f6a-4c5a-9a3e-0000000000c1","role":"user","parts":[{"type":"text","text":"no file"}],"createdAt":"2026-01-01T00:00:00"}]"""))
+        a.engine.syncOnce()
+        assertEquals(200, blobStatus("DELETE"))
+        assertEquals(404, blobStatus("HEAD"))
+        // 同一个文件又被引用(同一进程里的同一个引擎实例)→ 必须重新上传,另一台设备才取得到
+        a.db.exec("UPDATE message_node SET messages = ? WHERE id = 'c1-n0'", listOf(msg(url, "again")))
+        a.engine.syncOnce()
+        assertEquals(200, blobStatus("HEAD"))
+        settle(a, b)
+        assertArrayEquals(png, b.store!!.describe(localUrlOf(b, "c1"))!!.read())
+    }
+
+    @Test
     fun `encodeUriComponent matches JavaScript for awkward names and decodes back`() {
         val cases = listOf(
             "a b.png" to "a%20b.png",
