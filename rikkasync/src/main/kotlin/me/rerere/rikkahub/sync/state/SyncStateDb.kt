@@ -29,7 +29,8 @@ class SyncStateDb(private val conn: SQLiteConnection) : StateStore, AutoCloseabl
 
     init {
         // WAL:读写互不阻塞;NORMAL:崩溃时最多丢最后一个事务(状态可重建,可接受)。
-        conn.run("PRAGMA journal_mode = WAL")
+        // 用 execSQL(只 step 一次):journal_mode 返回一行结果,Android 的框架驱动对它再 step 一次会抛 CursorIndexOutOfBoundsException(模拟器实测)。
+        conn.execSQL("PRAGMA journal_mode = WAL")
         conn.execSQL("PRAGMA synchronous = NORMAL")
         val version = conn.queryOne("PRAGMA user_version") { it.getLong(0).toInt() } ?: 0
         if (version > SCHEMA_VERSION) {
