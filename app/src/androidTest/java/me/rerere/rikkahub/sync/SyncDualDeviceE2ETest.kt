@@ -19,6 +19,7 @@ import me.rerere.rikkahub.sync.host.AndroidConversationHost
 import me.rerere.rikkahub.sync.host.ConversationSink
 import me.rerere.rikkahub.sync.host.ConversationWrite
 import me.rerere.rikkahub.sync.host.DirtyTracker
+import me.rerere.rikkahub.sync.host.ConversationRows
 import me.rerere.rikkahub.sync.host.RoomSqlDb
 import me.rerere.rikkahub.sync.state.SyncStateDb
 import me.rerere.rikkahub.utils.JsonInstant
@@ -38,6 +39,11 @@ import kotlinx.serialization.json.jsonPrimitive as jPrim
 /** 同进程双库双 token 模拟两台设备(X1 子集)。runner: serverUrl, adminToken;adb reverse 8787。 */
 @RunWith(AndroidJUnit4::class)
 class SyncDualDeviceE2ETest {
+    companion object {
+        /** 同一测试类共用恢复码(须 companion:JUnit 每测例新建测试实例,实例 lazy 会生成多把密钥)。 */
+        private val classRecovery = Crypto.encodeRecoveryKey(Crypto.generateMasterKey())
+    }
+
     private val app get() = InstrumentationRegistry.getInstrumentation().targetContext
     private val args get() = InstrumentationRegistry.getArguments()
     private val assistantId = "0950e2dc-9bd5-4801-afa3-aa887aa36b4e"
@@ -83,16 +89,23 @@ class SyncDualDeviceE2ETest {
         val serverUrl = args.getString("serverUrl")!!
         val adminToken = args.getString("adminToken")!!
         val base = serverUrl.trimEnd('/')
-        val recovery = Crypto.encodeRecoveryKey(Crypto.generateMasterKey())
+        val recovery = classRecovery
         val keys = Crypto.deriveKeys(Crypto.decodeRecoveryKey(recovery))
+        val mainDb = GlobalContext.get().get<AppDatabase>()
+        RoomSqlDb(mainDb).exec("DELETE FROM message_node")
+        mainDb.conversationDao().deleteAll()
         val (phoneToken, _) = deviceToken(base, adminToken, "phone-e2e")
         val (peerToken, peerDevId) = deviceToken(base, adminToken, "peer-e2e")
         val runtime = GlobalContext.get().get<SyncRuntime>()
+        runtime.controller.stop()
         runtime.config.clearKey()
         runtime.config.importKey(recovery)
         runtime.config.update(enabled = false, serverUrl = base, deviceToken = phoneToken)
+        SyncRuntime.onBackupRestored(app.applicationContext as android.app.Application)
+        runtime.controller.resetState()
         runtime.config.update(enabled = true)
         runtime.reload()
+        runtime.controller.stop()
         val peerDb = AppDatabaseFactory.create(app, "peer-${System.nanoTime()}")
         val peerSql = RoomSqlDb(peerDb)
         DirtyTracker(peerSql).install()
@@ -151,9 +164,14 @@ class SyncDualDeviceE2ETest {
         try {
             val id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
             seedMain(id, "phone", "body", 1000, "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb01", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb02")
-            runtime.controller.syncOnceNow()
-            peer.engine.syncOnce()
+            val phonePush = runtime.controller.syncOnceNow()
+            assertTrue("phone sync: ${phonePush.errors}", phonePush.errors.isEmpty())
+            assertTrue("phone should push conversation: $phonePush", phonePush.pushed >= 1)
+            val peerPull = peer.engine.syncOnce()
+            assertTrue("peer sync: ${peerPull.errors}", peerPull.errors.isEmpty())
+            assertEquals("phone", ConversationRows.readConversation(peer.sql, id)?.title)
             peer.sql.exec("UPDATE ConversationEntity SET title = ?, update_at = ? WHERE id = ?", listOf("from-peer", 9000L, id))
+            assertTrue("UPDATE should mark sync_dirty", DirtyTracker(peer.sql).count() >= 1)
             assertTrue(DirtyTracker(peer.sql).claim().contains(id))
             val push = peer.engine.syncOnce()
             assertTrue("peer push errors: ${push.errors}", push.errors.isEmpty())
